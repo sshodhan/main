@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Math Quest Garden</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;700&family=Nunito:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="sky-gradient"></div>
+  <header class="hero">
+    <div class="hero__content">
+      <h1>Math Quest Garden</h1>
+      <p>Playful adventures that grow number intuition, long division superpowers, and decimal confidence.</p>
+      <div class="score-display" aria-live="polite">
+        <span class="score-display__label">Sparkle Stars:</span>
+        <span id="sparkleStars" class="score-display__value">0</span>
+      </div>
+      <button id="sparkleMode" class="btn btn--sparkle" type="button">Sparkle Boost ✨</button>
+    </div>
+    <div class="hero__illustration" aria-hidden="true">
+      <div class="planet"></div>
+      <div class="rocket"></div>
+      <div class="trail"></div>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" id="numberSense">
+      <div class="card__header">
+        <h2>Number Sense Meadow</h2>
+        <p>Flex those mental-math muscles with colorful challenges and helpful hints.</p>
+      </div>
+      <div class="card__body">
+        <div class="challenge" aria-live="polite">
+          <h3 id="nsQuestion">Loading challenge...</h3>
+          <ul id="nsOptions" class="options" role="list"></ul>
+          <button id="nsNew" class="btn" type="button">New Challenge</button>
+        </div>
+        <aside class="tips">
+          <h4>Quick Tips</h4>
+          <ul>
+            <li>Use landmark numbers like 10, 50, or 100 to estimate quickly.</li>
+            <li>Break tough problems into easier parts you already know.</li>
+            <li>Check answers by reversing the operation.</li>
+          </ul>
+        </aside>
+      </div>
+      <p id="nsFeedback" class="feedback" role="status"></p>
+    </section>
+
+    <section class="card" id="longDivision">
+      <div class="card__header">
+        <h2>Long Division Lab</h2>
+        <p>Follow the glowing guide to divide step-by-step. Every correct digit earns a star!</p>
+      </div>
+      <div class="card__body card__body--stack">
+        <div class="division-panel" aria-live="polite">
+          <div class="division-problem">
+            <span class="division-label">Divisor:</span>
+            <span id="ldDivisor" class="division-value">0</span>
+            <span class="division-label">Dividend:</span>
+            <span id="ldDividend" class="division-value">0</span>
+          </div>
+          <div class="division-progress">
+            <p>Building quotient: <span id="ldQuotient">—</span></p>
+            <p>Current focus number: <span id="ldCurrent">—</span></p>
+            <p>Remainder so far: <span id="ldRemainder">—</span></p>
+          </div>
+          <form id="ldForm" class="division-form">
+            <label for="ldInput">What digit fits?</label>
+            <input id="ldInput" name="ldInput" type="number" min="0" max="9" inputmode="numeric" required />
+            <button class="btn" type="submit">Lock In Digit</button>
+          </form>
+          <p id="ldHint" class="hint"></p>
+          <button id="ldNew" class="btn btn--ghost" type="button">New Puzzle</button>
+        </div>
+        <aside class="tips">
+          <h4>Division Game Plan</h4>
+          <ol>
+            <li>See how many times the divisor fits into the highlighted number.</li>
+            <li>Multiply and subtract to find what is left.</li>
+            <li>Bring down the next digit and repeat!</li>
+          </ol>
+          <div class="mini-whiteboard" aria-hidden="true">
+            <span>📓</span>
+            <p>Need scratch space? Imagine this corner as your doodle pad.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="card" id="decimalExplorer">
+      <div class="card__header">
+        <h2>Decimal Discovery River</h2>
+        <p>Slide along the riverbank to land on the hidden decimal. Learn how decimals connect to fractions!</p>
+      </div>
+      <div class="card__body card__body--stack">
+        <div class="decimal-panel" aria-live="polite">
+          <p class="decimal-target">Secret decimal: <span id="decTarget">0.0</span></p>
+          <div class="slider-wrap">
+            <input type="range" id="decSlider" min="0" max="1000" value="0" step="1" aria-label="Decimal position" />
+            <div class="river"></div>
+          </div>
+          <div class="slider-value">Your guess: <span id="decGuess">0.00</span></div>
+          <button id="decCheck" class="btn" type="button">Make a Splash!</button>
+          <p id="decFeedback" class="feedback" role="status"></p>
+          <div id="decFact" class="fact"></div>
+          <button id="decNew" class="btn btn--ghost" type="button">New River Quest</button>
+        </div>
+        <aside class="tips">
+          <h4>Decimal Wisdom</h4>
+          <ul>
+            <li>Every decimal is a fraction! 0.3 is 3 tenths, or <sup>3</sup>/<sub>10</sub>.</li>
+            <li>Compare decimals by lining up place values: tenths, hundredths, thousandths.</li>
+            <li>Decimals can be rounded to make estimates that are quick and clever.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Keep exploring, mathematician! Every sparkle star means your brain made a new connection.</p>
+  </footer>
+
+  <div id="sparkleContainer" aria-hidden="true"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
