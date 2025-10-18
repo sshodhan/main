@@ -7,7 +7,7 @@ const __dirname = dirname(__filename);
 
 const imagePuzzlePath = resolve(
   __dirname,
-  "../src/v0-math-app-for-kids/components/ImagePuzzle/ImagePuzzle.tsx"
+  "../components/ImagePuzzle/ImagePuzzle.tsx"
 );
 
 const imagePuzzleSource = readFileSync(imagePuzzlePath, "utf8");
