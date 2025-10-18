@@ -14,7 +14,7 @@ choice that resonates well with girls around ages 9 to 11.
 import {
   ImagePuzzle,
   FUN_GIRLS_PUZZLE_IMAGE_SRC,
-} from "./components/ImagePuzzle";
+} from "./v0-math-app-for-kids/components";
 
 export function GameView({ solved, total }: { solved: number; total: number }) {
   const progress = total === 0 ? 0 : solved / total;
