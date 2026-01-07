@@ -13,6 +13,7 @@ set -e
 API_BASE_URL="https://api.openai.com/v1"
 DEFAULT_MODEL="sora-2"
 DEFAULT_DURATION="4"
+DEFAULT_SIZE="1280x720"
 
 # Colors for output
 RED='\033[0;31m'
@@ -48,6 +49,7 @@ Prompt (one of these):
 Optional:
   --model, -m           Model: sora-2 (fast) or sora-2-pro (quality) [default: sora-2]
   --duration, -d        Duration in seconds: 4, 8, or 12 [default: 4]
+  --size, -s            Resolution: 1280x720, 720x1280, 1792x1024, 1024x1792 [default: 1280x720]
   --poll                Auto-poll until video is complete
   --download, -o        Download completed video to this path
 
@@ -76,6 +78,7 @@ PROMPT=""
 PROMPT_FILE=""
 MODEL="$DEFAULT_MODEL"
 DURATION="$DEFAULT_DURATION"
+SIZE="$DEFAULT_SIZE"
 POLL=false
 OUTPUT=""
 
@@ -86,6 +89,7 @@ while [[ $# -gt 0 ]]; do
         --prompt-file|-f) PROMPT_FILE="$2"; shift 2 ;;
         --model|-m) MODEL="$2"; shift 2 ;;
         --duration|-d) DURATION="$2"; shift 2 ;;
+        --size|-s) SIZE="$2"; shift 2 ;;
         --poll) POLL=true; shift ;;
         --download|-o) OUTPUT="$2"; shift 2 ;;
         --help|-h) usage ;;
@@ -122,7 +126,7 @@ fi
 
 # Display info
 print_info "Creating video from image: $IMAGE"
-print_info "Model: $MODEL, Duration: ${DURATION}s"
+print_info "Model: $MODEL, Duration: ${DURATION}s, Size: $SIZE"
 echo ""
 print_info "Prompt:"
 echo "----------------------------------------"
@@ -136,6 +140,7 @@ CURL_ARGS=(
     -H "Content-Type: multipart/form-data"
     -F "model=$MODEL"
     -F "seconds=$DURATION"
+    -F "size=$SIZE"
     -F "prompt=$PROMPT"
     -F "input_reference=@$IMAGE"
 )
