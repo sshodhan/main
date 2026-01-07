@@ -1,14 +1,16 @@
 # Sora Video API - Vercel/React Implementation Guide
 
-This guide explains how to implement OpenAI's Sora video generation API in a Vercel/Next.js application. It addresses common issues like the **405 Method Not Allowed** error.
+This guide explains how to implement OpenAI's Sora video generation API in a Vercel/Next.js application. It addresses common issues like the **405 Method Not Allowed** error and aligns with the Aura Stylist architecture.
 
 ## Table of Contents
 1. [Understanding the 405 Error](#understanding-the-405-error)
 2. [API Overview](#api-overview)
-3. [Implementation Architecture](#implementation-architecture)
-4. [API Route Examples](#api-route-examples)
-5. [React Frontend Components](#react-frontend-components)
-6. [Important Limitations](#important-limitations)
+3. [Architecture Overview](#architecture-overview)
+4. [Server Actions Implementation](#server-actions-implementation)
+5. [Video API Client Service](#video-api-client-service)
+6. [React Components](#react-components)
+7. [Prompt Structure](#prompt-structure)
+8. [Important Limitations](#important-limitations)
 
 ---
 
@@ -18,12 +20,41 @@ The 405 error typically occurs due to:
 
 | Cause | Solution |
 |-------|----------|
-| Calling OpenAI API from browser | Use server-side API routes |
+| Calling OpenAI API from browser | Use server actions or API routes |
 | Wrong HTTP method | Use POST for `/videos`, GET for status |
-| Missing/wrong Content-Type | Use `multipart/form-data` for video creation |
-| CORS blocking client requests | Proxy through your API routes |
+| Using JSON instead of FormData | Use `multipart/form-data` for video creation |
+| Setting Content-Type manually | Let fetch set it automatically for FormData |
+| CORS blocking client requests | Proxy through server-side code |
 
-**Key Rule:** Never call `api.openai.com` directly from the browser. Always proxy through your Vercel API routes.
+**Critical Fix:** The Sora `/videos` endpoint requires `multipart/form-data`, NOT `application/json`:
+
+```typescript
+// ❌ WRONG - causes 405
+const response = await fetch('https://api.openai.com/v1/videos', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',  // ❌ This causes 405!
+    'Authorization': `Bearer ${apiKey}`,
+  },
+  body: JSON.stringify({ prompt, model, seconds, size }),
+});
+
+// ✅ CORRECT - use FormData
+const formData = new FormData();
+formData.append('prompt', prompt);
+formData.append('model', model);
+formData.append('seconds', seconds.toString());
+formData.append('size', size);
+
+const response = await fetch('https://api.openai.com/v1/videos', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${apiKey}`,
+    // DO NOT set Content-Type - FormData sets it automatically
+  },
+  body: formData,
+});
+```
 
 ---
 
@@ -33,7 +64,7 @@ The 405 error typically occurs due to:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/v1/videos` | POST | Create a video |
+| `/v1/videos` | POST | Create a video (requires multipart/form-data) |
 | `/v1/videos/{id}` | GET | Get video status |
 | `/v1/videos/{id}/content` | GET | Download video file |
 | `/v1/videos` | GET | List all videos |
@@ -43,13 +74,13 @@ The 405 error typically occurs due to:
 
 ```
 POST https://api.openai.com/v1/videos
-Content-Type: multipart/form-data
+Content-Type: multipart/form-data  (auto-set by FormData)
 Authorization: Bearer $OPENAI_API_KEY
 
 Form Fields:
 - prompt: string (required) - Text description of the video
 - model: string - "sora-2" (fast) or "sora-2-pro" (quality)
-- seconds: number - 4, 8, or 12
+- seconds: string - "4", "8", or "12"
 - size: string - "1280x720", "720x1280", "1792x1024", "1024x1792"
 ```
 
@@ -62,7 +93,7 @@ Form Fields:
   "created_at": 1767817214,
   "status": "queued",
   "model": "sora-2",
-  "prompt": "A golden retriever running...",
+  "prompt": "A fashion model walking...",
   "seconds": "4",
   "size": "1280x720"
 }
@@ -77,459 +108,495 @@ Form Fields:
 
 ---
 
-## Implementation Architecture
+## Architecture Overview
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  React Client   │────▶│  Vercel API     │────▶│  OpenAI API     │
-│  (Browser)      │     │  Routes         │     │  (Sora)         │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        │                       │
-        │ fetch('/api/sora')    │ POST api.openai.com/v1/videos
-        │                       │
-        ▼                       ▼
-   No CORS issues          Server-side auth
-```
-
----
-
-## API Route Examples
-
-### 1. Create Video Route (`/api/sora/create/route.ts`)
-
-```typescript
-// app/api/sora/create/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { prompt, model = 'sora-2', duration = 4, size = '1280x720' } = body;
-
-    if (!prompt) {
-      return NextResponse.json(
-        { error: 'Prompt is required' },
-        { status: 400 }
-      );
-    }
-
-    // Create FormData for multipart request
-    const formData = new FormData();
-    formData.append('prompt', prompt);
-    formData.append('model', model);
-    formData.append('seconds', duration.toString());
-    formData.append('size', size);
-
-    const response = await fetch('https://api.openai.com/v1/videos', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        // DO NOT set Content-Type - fetch sets it automatically for FormData
-      },
-      body: formData,
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: data.error?.message || 'Failed to create video' },
-        { status: response.status }
-      );
-    }
-
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Sora API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-```
-
-### 2. Check Status Route (`/api/sora/status/[videoId]/route.ts`)
-
-```typescript
-// app/api/sora/status/[videoId]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { videoId: string } }
-) {
-  try {
-    const { videoId } = params;
-
-    const response = await fetch(
-      `https://api.openai.com/v1/videos/${videoId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: data.error?.message || 'Failed to get status' },
-        { status: response.status }
-      );
-    }
-
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Sora status error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-```
-
-### 3. Download Video Route (`/api/sora/download/[videoId]/route.ts`)
-
-```typescript
-// app/api/sora/download/[videoId]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { videoId: string } }
-) {
-  try {
-    const { videoId } = params;
-
-    // First check if video is completed
-    const statusResponse = await fetch(
-      `https://api.openai.com/v1/videos/${videoId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      }
-    );
-
-    const statusData = await statusResponse.json();
-
-    if (statusData.status !== 'completed') {
-      return NextResponse.json(
-        { error: `Video not ready. Status: ${statusData.status}` },
-        { status: 400 }
-      );
-    }
-
-    // Download the video content
-    const videoResponse = await fetch(
-      `https://api.openai.com/v1/videos/${videoId}/content`,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      }
-    );
-
-    if (!videoResponse.ok) {
-      return NextResponse.json(
-        { error: 'Failed to download video' },
-        { status: videoResponse.status }
-      );
-    }
-
-    // Stream the video back to the client
-    const videoBuffer = await videoResponse.arrayBuffer();
-
-    return new NextResponse(videoBuffer, {
-      headers: {
-        'Content-Type': 'video/mp4',
-        'Content-Disposition': `attachment; filename="${videoId}.mp4"`,
-      },
-    });
-  } catch (error) {
-    console.error('Sora download error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
+┌──────────────────────────────────────────────────────────────────┐
+│                        CLIENT (Browser)                          │
+├──────────────────────────────────────────────────────────────────┤
+│  components/VisualizeTab.tsx                                     │
+│  - Validates prerequisites (outfit, weather, reference)         │
+│  - Orchestrates generation flow                                  │
+│                           │                                      │
+│  components/VideoPlayerModal.tsx                                 │
+│  - Displays video with playback controls                        │
+│  - Handles download                                              │
+└──────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     SERVER (Vercel)                              │
+├──────────────────────────────────────────────────────────────────┤
+│  app/actions/openai-video-actions.ts                            │
+│  - Server-side prompt assembly                                   │
+│  - Enforces outfit and reference validation                     │
+│  - Applies identity + style constraints                         │
+│                           │                                      │
+│  services/videoApiClient.ts                                      │
+│  - Manages API calls to OpenAI                                  │
+│  - Handles retries and polling                                  │
+│  - Returns base64 data URL on completion                        │
+└──────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     OpenAI Sora API                              │
+│  POST /v1/videos → GET /v1/videos/{id} → GET /v1/videos/{id}/content │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## React Frontend Components
+## Server Actions Implementation
 
-### Video Generator Hook (`useSoraVideo.ts`)
+### `app/actions/openai-video-actions.ts`
 
 ```typescript
-// hooks/useSoraVideo.ts
-import { useState, useCallback } from 'react';
+'use server';
 
-interface VideoOptions {
+import { createVideoJob, pollVideoStatus, getVideoContent } from '@/services/videoApiClient';
+
+interface VideoGenerationRequest {
   prompt: string;
+  identityBible?: {
+    subject: string;
+    appearance: string;
+    outfit: {
+      top: string;
+      bottom: string;
+      outerwear?: string;
+      footwear: string;
+    };
+  };
+  sceneSpec?: {
+    location: string;
+    weather: string;
+    cameraDirection: string;
+  };
   model?: 'sora-2' | 'sora-2-pro';
   duration?: 4 | 8 | 12;
   size?: '1280x720' | '720x1280' | '1792x1024' | '1024x1792';
 }
 
-interface VideoStatus {
-  id: string;
-  status: 'queued' | 'in_progress' | 'completed' | 'failed';
-  progress?: number;
-  error?: { message: string };
+interface VideoGenerationResult {
+  success: boolean;
+  videoUrl?: string;  // base64 data URL
+  videoId?: string;
+  error?: string;
 }
 
-export function useSoraVideo() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [videoId, setVideoId] = useState<string | null>(null);
-  const [status, setStatus] = useState<VideoStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const createVideo = useCallback(async (options: VideoOptions) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/sora/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create video');
-      }
-
-      setVideoId(data.id);
-      setStatus(data);
-      return data;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(message);
-      throw err;
-    } finally {
-      setIsLoading(false);
+export async function generateVideo(
+  request: VideoGenerationRequest
+): Promise<VideoGenerationResult> {
+  try {
+    // Validate required fields
+    if (!request.prompt) {
+      return { success: false, error: 'Prompt is required' };
     }
-  }, []);
 
-  const checkStatus = useCallback(async (id?: string) => {
-    const checkId = id || videoId;
-    if (!checkId) return null;
+    // Assemble enhanced prompt with identity and style constraints
+    const enhancedPrompt = assemblePrompt(request);
 
-    try {
-      const response = await fetch(`/api/sora/status/${checkId}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to check status');
-      }
-
-      setStatus(data);
-      return data;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(message);
-      return null;
-    }
-  }, [videoId]);
-
-  const pollUntilComplete = useCallback(async (
-    id?: string,
-    interval = 5000,
-    timeout = 600000
-  ): Promise<VideoStatus | null> => {
-    const checkId = id || videoId;
-    if (!checkId) return null;
-
-    const startTime = Date.now();
-
-    return new Promise((resolve, reject) => {
-      const poll = async () => {
-        if (Date.now() - startTime > timeout) {
-          reject(new Error('Timeout waiting for video'));
-          return;
-        }
-
-        const status = await checkStatus(checkId);
-
-        if (status?.status === 'completed') {
-          resolve(status);
-        } else if (status?.status === 'failed') {
-          reject(new Error(status.error?.message || 'Video generation failed'));
-        } else {
-          setTimeout(poll, interval);
-        }
-      };
-
-      poll();
+    // Create video job
+    const job = await createVideoJob({
+      prompt: enhancedPrompt,
+      model: request.model || 'sora-2',
+      seconds: request.duration || 4,
+      size: request.size || '1280x720',
     });
-  }, [videoId, checkStatus]);
 
-  const getDownloadUrl = useCallback((id?: string) => {
-    const downloadId = id || videoId;
-    return downloadId ? `/api/sora/download/${downloadId}` : null;
-  }, [videoId]);
+    if (!job.id) {
+      return { success: false, error: 'Failed to create video job' };
+    }
 
-  return {
-    createVideo,
-    checkStatus,
-    pollUntilComplete,
-    getDownloadUrl,
-    videoId,
-    status,
-    isLoading,
-    error,
-  };
+    // Poll for completion
+    const completedJob = await pollVideoStatus(job.id, {
+      interval: 5000,
+      timeout: 600000,
+    });
+
+    if (completedJob.status !== 'completed') {
+      return {
+        success: false,
+        error: completedJob.error?.message || 'Video generation failed',
+        videoId: job.id,
+      };
+    }
+
+    // Get video content as base64
+    const videoContent = await getVideoContent(job.id);
+
+    return {
+      success: true,
+      videoUrl: videoContent,
+      videoId: job.id,
+    };
+  } catch (error) {
+    console.error('Video generation error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+function assemblePrompt(request: VideoGenerationRequest): string {
+  const parts: string[] = [];
+
+  // Add identity constraints
+  if (request.identityBible) {
+    const { subject, appearance, outfit } = request.identityBible;
+
+    parts.push(`SUBJECT: ${subject}`);
+    parts.push(`IDENTITY CONSISTENCY: ${appearance} must remain absolutely consistent throughout entire video.`);
+
+    // Add outfit details
+    const outfitParts = [
+      `TOP: ${outfit.top}`,
+      `BOTTOM: ${outfit.bottom}`,
+      outfit.outerwear ? `OUTERWEAR: ${outfit.outerwear}` : null,
+      `FOOTWEAR: ${outfit.footwear}`,
+    ].filter(Boolean);
+
+    parts.push(`EXACT OUTFIT (all pieces must stay visible):\n${outfitParts.join(' | ')}`);
+    parts.push('FULL-BODY FRAMING: Keep shoes and hemline visible at all times. No cropping at ankles or waist.');
+  }
+
+  // Add scene specification
+  if (request.sceneSpec) {
+    const { location, weather, cameraDirection } = request.sceneSpec;
+    parts.push(`LOCATION: ${location}`);
+    parts.push(`WEATHER: ${weather}`);
+    parts.push(`CAMERA: ${cameraDirection}`);
+  }
+
+  // Add main prompt
+  parts.push(`MOTION: ${request.prompt}`);
+
+  // Add cinematography constraints
+  parts.push(`CINEMATOGRAPHY:
+- Full-body portrait, sharp focus on garments
+- Professional lighting with soft shadows
+- Smooth camera tracking; avoid cutting off shoes or headroom
+- Natural fabric movement, high-resolution quality`);
+
+  return parts.join('\n\n');
 }
 ```
 
-### Video Generator Component (`SoraVideoGenerator.tsx`)
+---
+
+## Video API Client Service
+
+### `services/videoApiClient.ts`
+
+```typescript
+const OPENAI_API_URL = 'https://api.openai.com/v1';
+
+interface CreateVideoParams {
+  prompt: string;
+  model: string;
+  seconds: number;
+  size: string;
+}
+
+interface VideoJob {
+  id: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'failed';
+  progress?: number;
+  error?: { code: string; message: string };
+}
+
+interface PollOptions {
+  interval?: number;
+  timeout?: number;
+}
+
+/**
+ * Create a new video generation job
+ * CRITICAL: Must use FormData, not JSON
+ */
+export async function createVideoJob(params: CreateVideoParams): Promise<VideoJob> {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY environment variable is not set');
+  }
+
+  // CRITICAL: Use FormData for multipart/form-data
+  const formData = new FormData();
+  formData.append('prompt', params.prompt);
+  formData.append('model', params.model);
+  formData.append('seconds', params.seconds.toString());
+  formData.append('size', params.size);
+
+  const response = await fetch(`${OPENAI_API_URL}/videos`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      // DO NOT set Content-Type - FormData sets it automatically with boundary
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || `API error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get the current status of a video job
+ */
+export async function getVideoStatus(videoId: string): Promise<VideoJob> {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  const response = await fetch(`${OPENAI_API_URL}/videos/${videoId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || `API error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Poll for video completion with retry logic
+ */
+export async function pollVideoStatus(
+  videoId: string,
+  options: PollOptions = {}
+): Promise<VideoJob> {
+  const { interval = 5000, timeout = 600000 } = options;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeout) {
+    const status = await getVideoStatus(videoId);
+
+    if (status.status === 'completed' || status.status === 'failed') {
+      return status;
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
+
+  throw new Error(`Timeout after ${timeout}ms waiting for video ${videoId}`);
+}
+
+/**
+ * Download video content and return as base64 data URL
+ */
+export async function getVideoContent(videoId: string): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  const response = await fetch(`${OPENAI_API_URL}/videos/${videoId}/content`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download video: ${response.status}`);
+  }
+
+  // Convert to base64 data URL
+  const arrayBuffer = await response.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString('base64');
+  return `data:video/mp4;base64,${base64}`;
+}
+```
+
+---
+
+## React Components
+
+### `components/VisualizeTab.tsx`
 
 ```tsx
-// components/SoraVideoGenerator.tsx
 'use client';
 
 import { useState } from 'react';
-import { useSoraVideo } from '@/hooks/useSoraVideo';
+import { generateVideo } from '@/app/actions/openai-video-actions';
+import { VideoPlayerModal } from './VideoPlayerModal';
 
-export function SoraVideoGenerator() {
-  const [prompt, setPrompt] = useState('');
-  const [model, setModel] = useState<'sora-2' | 'sora-2-pro'>('sora-2');
-  const [duration, setDuration] = useState<4 | 8 | 12>(4);
-  const [size, setSize] = useState<string>('1280x720');
+interface VisualizeTabProps {
+  outfit: {
+    top: string;
+    bottom: string;
+    outerwear?: string;
+    footwear: string;
+  };
+  weather: string;
+  referenceImage?: string;
+}
 
-  const {
-    createVideo,
-    pollUntilComplete,
-    getDownloadUrl,
-    status,
-    isLoading,
-    error,
-  } = useSoraVideo();
+export function VisualizeTab({ outfit, weather, referenceImage }: VisualizeTabProps) {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Validate prerequisites
+  const canGenerate = outfit.top && outfit.bottom && outfit.footwear;
+
+  const handleGenerate = async () => {
+    if (!canGenerate) {
+      setError('Please complete the outfit selection (top, bottom, and footwear required)');
+      return;
+    }
+
+    setIsGenerating(true);
+    setError(null);
 
     try {
-      const video = await createVideo({
-        prompt,
-        model,
-        duration,
-        size: size as any,
+      const result = await generateVideo({
+        prompt: 'Model walking confidently with natural graceful movement',
+        identityBible: {
+          subject: 'fashion model',
+          appearance: 'Subject appearance',
+          outfit,
+        },
+        sceneSpec: {
+          location: 'Fashion runway',
+          weather,
+          cameraDirection: 'Smooth tracking shot following the model',
+        },
+        model: 'sora-2-pro',
+        duration: 8,
+        size: '720x1280',  // Portrait for fashion
       });
 
-      // Poll until complete
-      await pollUntilComplete(video.id);
+      if (result.success && result.videoUrl) {
+        setVideoUrl(result.videoUrl);
+      } else {
+        setError(result.error || 'Failed to generate video');
+      }
     } catch (err) {
-      console.error('Video generation failed:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Sora Video Generator</h1>
+    <div className="p-6">
+      <h2 className="text-xl font-bold mb-4">Visualize Outfit</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Prompt
-          </label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full p-3 border rounded-lg"
-            rows={4}
-            placeholder="Describe the video you want to create..."
-            required
-          />
-        </div>
+      {/* Outfit summary */}
+      <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+        <h3 className="font-medium mb-2">Current Outfit</h3>
+        <ul className="text-sm space-y-1">
+          <li>Top: {outfit.top || '(not selected)'}</li>
+          <li>Bottom: {outfit.bottom || '(not selected)'}</li>
+          {outfit.outerwear && <li>Outerwear: {outfit.outerwear}</li>}
+          <li>Footwear: {outfit.footwear || '(not selected)'}</li>
+        </ul>
+      </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Model</label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value as any)}
-              className="w-full p-2 border rounded"
-            >
-              <option value="sora-2">Sora 2 (Fast)</option>
-              <option value="sora-2-pro">Sora 2 Pro (Quality)</option>
-            </select>
-          </div>
+      {/* Generate button */}
+      <button
+        onClick={handleGenerate}
+        disabled={!canGenerate || isGenerating}
+        className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {isGenerating ? 'Generating Video...' : 'Generate Fashion Video'}
+      </button>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Duration</label>
-            <select
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value) as any)}
-              className="w-full p-2 border rounded"
-            >
-              <option value={4}>4 seconds</option>
-              <option value={8}>8 seconds</option>
-              <option value={12}>12 seconds</option>
-            </select>
-          </div>
+      {!canGenerate && (
+        <p className="mt-2 text-sm text-amber-600">
+          ⚠️ Please select top, bottom, and footwear to generate video
+        </p>
+      )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Size</label>
-            <select
-              value={size}
-              onChange={(e) => setSize(e.target.value)}
-              className="w-full p-2 border rounded"
-            >
-              <option value="1280x720">1280x720 (Landscape)</option>
-              <option value="720x1280">720x1280 (Portrait)</option>
-              <option value="1792x1024">1792x1024 (Wide)</option>
-              <option value="1024x1792">1024x1792 (Tall)</option>
-            </select>
-          </div>
-        </div>
-
-        <button
-          type="submit"
-          disabled={isLoading || !prompt}
-          className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          {isLoading ? 'Generating...' : 'Generate Video'}
-        </button>
-      </form>
-
+      {/* Error display */}
       {error && (
         <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-lg">
           {error}
         </div>
       )}
 
-      {status && (
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-          <h3 className="font-medium mb-2">Status: {status.status}</h3>
-          {status.progress !== undefined && (
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full transition-all"
-                style={{ width: `${status.progress}%` }}
-              />
-            </div>
-          )}
-
-          {status.status === 'completed' && (
-            <a
-              href={getDownloadUrl()!}
-              download
-              className="mt-4 inline-block px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-            >
-              Download Video
-            </a>
-          )}
-        </div>
+      {/* Video player modal */}
+      {videoUrl && (
+        <VideoPlayerModal
+          videoUrl={videoUrl}
+          onClose={() => setVideoUrl(null)}
+        />
       )}
+    </div>
+  );
+}
+```
+
+### `components/VideoPlayerModal.tsx`
+
+```tsx
+'use client';
+
+import { useRef } from 'react';
+
+interface VideoPlayerModalProps {
+  videoUrl: string;
+  onClose: () => void;
+}
+
+export function VideoPlayerModal({ videoUrl, onClose }: VideoPlayerModalProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const handleDownload = () => {
+    const link = document.createElement('a');
+    link.href = videoUrl;
+    link.download = `fashion-video-${Date.now()}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-4 max-w-2xl w-full mx-4">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold">Generated Video</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+
+        <video
+          ref={videoRef}
+          src={videoUrl}
+          controls
+          autoPlay
+          loop
+          className="w-full rounded-lg"
+        />
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={handleDownload}
+            className="flex-1 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+          >
+            Download Video
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -537,114 +604,116 @@ export function SoraVideoGenerator() {
 
 ---
 
-## Important Limitations
+## Prompt Structure
 
-### 1. Reference Images with People Are Blocked
+The system uses a **locked two-layer prompt approach**:
 
-The Sora API **blocks all reference images containing people**. This includes:
-- Real photos of people
-- AI-generated images of people (including DALL-E generated)
-- Illustrations with human figures
+### Layer 1: Identity + Style Bible (Stable)
 
-**Workaround:** Use text-to-video only for videos with people:
-```typescript
-// This works for people:
-createVideo({
-  prompt: "A fashion model walking on a runway, professional lighting",
-  model: "sora-2-pro",
-  duration: 8
-});
+```
+SUBJECT: [subject type, e.g., "male model in their 26-35"]
+IDENTITY CONSISTENCY: Subject appearance must remain absolutely consistent throughout entire video.
 
-// This does NOT work with people images:
-// createVideoFromImage({ image: personPhoto, prompt: "..." }) // ❌ Blocked
+EXACT OUTFIT (all pieces must stay visible):
+TOP: [top description] | BOTTOM: [bottom description] | OUTERWEAR: [if any] | FOOTWEAR: [footwear]
+
+FULL-BODY FRAMING: Keep shoes and hemline visible at all times. No cropping at ankles or waist.
 ```
 
-### 2. Vercel Function Timeout
+### Layer 2: Scene Specs (Per-request)
 
-Vercel has function timeout limits:
-- Hobby: 10 seconds
-- Pro: 60 seconds
-- Enterprise: 900 seconds
+```
+LOCATION: [location description]
+WEATHER: [weather conditions]
+CAMERA: [camera direction/movement]
+MOTION: [the actual action/movement prompt]
 
-Video generation takes 1-5 minutes, so you **cannot** wait for completion in a single request.
+CINEMATOGRAPHY:
+- Full-body portrait, sharp focus on garments
+- Professional lighting with soft shadows
+- Smooth camera tracking
+- Natural fabric movement
+```
 
-**Solution:** Use polling from the client:
+---
+
+## Important Limitations
+
+### 1. Reference Images with People Are BLOCKED
+
+The Sora API **blocks ALL reference images containing people**:
+- ❌ Real photos of people
+- ❌ AI-generated images of people (DALL-E, Midjourney, etc.)
+- ❌ Illustrations with human figures
+
+**Solution:** Use **text-to-video only** for fashion/people videos. Do not use `input_reference` parameter.
+
+### 2. Vercel Function Timeouts
+
+| Plan | Timeout |
+|------|---------|
+| Hobby | 10 seconds |
+| Pro | 60 seconds |
+| Enterprise | 900 seconds |
+
+Video generation takes 1-5 minutes. Solutions:
+
+**Option A: Client-side polling (recommended)**
 ```typescript
-// 1. Create video (fast, returns immediately)
-const video = await createVideo({ prompt: "..." });
+// Server action returns job ID immediately
+const { videoId } = await startVideoGeneration(params);
 
-// 2. Poll from client (avoids server timeout)
-await pollUntilComplete(video.id);
+// Client polls for completion
+await pollUntilComplete(videoId);
+```
+
+**Option B: Vercel Pro with streaming**
+```typescript
+// Use streaming to keep connection alive
+export async function POST(request: Request) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      // Send heartbeat while processing
+      const heartbeat = setInterval(() => {
+        controller.enqueue(encoder.encode('.\n'));
+      }, 10000);
+
+      // Generate video...
+      clearInterval(heartbeat);
+    }
+  });
+
+  return new Response(stream);
+}
 ```
 
 ### 3. Environment Variables
 
-Add to your `.env.local`:
-```
+```bash
+# .env.local
 OPENAI_API_KEY=sk-your-api-key-here
 ```
 
-Add to Vercel project settings:
-1. Go to Project → Settings → Environment Variables
-2. Add `OPENAI_API_KEY` with your API key
+Vercel Dashboard: Project → Settings → Environment Variables
 
 ---
 
-## Debugging the 405 Error
+## Debugging Checklist
 
-If you're still getting 405 errors, check:
+### 405 Error Checklist
 
-1. **Are you calling OpenAI directly from browser?**
-   ```typescript
-   // ❌ WRONG - from React component
-   fetch('https://api.openai.com/v1/videos', { ... })
+| Check | Fix |
+|-------|-----|
+| Using JSON body? | Switch to FormData |
+| Setting Content-Type manually? | Remove it, let FormData set it |
+| Calling from browser? | Move to server action/API route |
+| Wrong HTTP method? | Use POST for create, GET for status |
 
-   // ✅ CORRECT - through your API route
-   fetch('/api/sora/create', { ... })
-   ```
+### Quick Test
 
-2. **Is your API route using the right method?**
-   ```typescript
-   // ❌ WRONG
-   export async function GET(request) { ... }
-
-   // ✅ CORRECT for creating videos
-   export async function POST(request) { ... }
-   ```
-
-3. **Are you setting Content-Type correctly?**
-   ```typescript
-   // ❌ WRONG - don't set Content-Type for FormData
-   headers: {
-     'Content-Type': 'multipart/form-data',  // Don't do this!
-     'Authorization': `Bearer ${key}`,
-   }
-
-   // ✅ CORRECT - let fetch set it automatically
-   headers: {
-     'Authorization': `Bearer ${key}`,
-   },
-   body: formData,  // FormData sets Content-Type automatically
-   ```
-
-4. **Is the route file in the correct location?**
-   ```
-   app/
-   └── api/
-       └── sora/
-           ├── create/
-           │   └── route.ts    ← POST /api/sora/create
-           └── status/
-               └── [videoId]/
-                   └── route.ts ← GET /api/sora/status/{videoId}
-   ```
-
----
-
-## Quick Reference
-
-### Working curl command (for testing):
 ```bash
+# Test from command line first
 curl -X POST "https://api.openai.com/v1/videos" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -F "model=sora-2" \
@@ -653,17 +722,17 @@ curl -X POST "https://api.openai.com/v1/videos" \
   -F "size=1280x720"
 ```
 
-### Equivalent API route:
-```typescript
-const formData = new FormData();
-formData.append('model', 'sora-2');
-formData.append('prompt', 'A golden retriever running through a meadow');
-formData.append('seconds', '4');
-formData.append('size', '1280x720');
+If this works but your code doesn't, the issue is in how you're forming the request.
 
-await fetch('https://api.openai.com/v1/videos', {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-  body: formData,
-});
-```
+---
+
+## Integration Checklist
+
+- [ ] Environment variable `OPENAI_API_KEY` is set
+- [ ] Using FormData (not JSON) for video creation
+- [ ] NOT setting Content-Type header manually
+- [ ] Input validation blocks incomplete requests
+- [ ] Prompts follow the locked schema (Identity + Scene)
+- [ ] API flow includes proper timeout/retry handling
+- [ ] No reference images with people (text-to-video only)
+- [ ] Client-side polling for long-running generation
