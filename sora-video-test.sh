@@ -68,7 +68,6 @@ Commands:
     --model, -m           Model to use: sora-2 or sora-2-pro (default: sora-2)
     --duration, -d        Duration in seconds: 4, 8, or 12 (default: 4)
     --size, -s            Resolution: 720x1280, 1280x720, 1024x1792, 1792x1024 (default: 1280x720)
-    --n                   Number of videos to generate (default: 1)
 
   create-image [options]   Create a video from an image
     --image, -i           Path to the input image (required)
@@ -129,7 +128,6 @@ create_video() {
     local model="$DEFAULT_MODEL"
     local duration="$DEFAULT_DURATION"
     local size="$DEFAULT_SIZE"
-    local n="1"
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -137,7 +135,6 @@ create_video() {
             --model|-m) model="$2"; shift 2 ;;
             --duration|-d) duration="$2"; shift 2 ;;
             --size|-s) size="$2"; shift 2 ;;
-            --n) n="$2"; shift 2 ;;
             *) print_error "Unknown option: $1"; exit 1 ;;
         esac
     done
@@ -156,8 +153,7 @@ create_video() {
         -F "prompt=$prompt" \
         -F "model=$model" \
         -F "seconds=$duration" \
-        -F "size=$size" \
-        -F "n=$n" | jq '.'
+        -F "size=$size" | jq '.'
 }
 
 create_video_from_image() {
