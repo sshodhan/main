@@ -1,10 +1,11 @@
 #!/bin/bash
 # Sora Image-to-Video Test Script
-# Creates a video from a reference image and optional prompt
+# Creates a video from a reference image and prompt
 #
 # Usage:
 #   export OPENAI_API_KEY="your-api-key"
 #   ./sora-image-to-video.sh --image photo.jpg --prompt "Make it come alive"
+#   ./sora-image-to-video.sh --image model.jpg --prompt-file fashion_prompt.txt
 
 set -e
 
@@ -38,27 +39,32 @@ Sora Image-to-Video Generator
 Usage: $0 [options]
 
 Required:
-  --image, -i         Path to the reference image (jpg, png, webp)
+  --image, -i           Path to the reference image (jpg, png, webp)
+
+Prompt (one of these):
+  --prompt, -p          Text prompt describing the desired video
+  --prompt-file, -f     Read prompt from a text file (useful for long prompts)
 
 Optional:
-  --prompt, -p        Text prompt describing the desired video motion/action
-  --model, -m         Model: sora-2 (fast) or sora-2-pro (quality) [default: sora-2]
-  --duration, -d      Duration in seconds: 4, 8, or 12 [default: 4]
-  --poll              Auto-poll until video is complete
-  --download, -o      Download completed video to this path
+  --model, -m           Model: sora-2 (fast) or sora-2-pro (quality) [default: sora-2]
+  --duration, -d        Duration in seconds: 4, 8, or 12 [default: 4]
+  --poll                Auto-poll until video is complete
+  --download, -o        Download completed video to this path
 
 Examples:
-  # Basic: animate an image
-  $0 -i photo.jpg
+  # Basic: animate an image with prompt
+  $0 -i photo.jpg -p "Person walks forward confidently"
 
-  # With prompt describing the motion
-  $0 -i landscape.png -p "Camera slowly pans across the scene, clouds move gently"
+  # With prompt from file (for long detailed prompts)
+  $0 -i model.jpg --prompt-file fashion_prompt.txt --poll -o output.mp4
+
+  # Fashion video example
+  $0 -i model.jpg -p "SUBJECT: male model walking confidently
+MOTION: Natural graceful movement, smooth forward walk
+CINEMATOGRAPHY: Full-body portrait, 9:16 vertical, sharp focus" -m sora-2-pro -d 8 --poll
 
   # High quality with auto-download
   $0 -i portrait.jpg -p "Person smiles and waves" -m sora-2-pro -d 8 --poll -o output.mp4
-
-  # Product video
-  $0 -i product.png -p "Product rotates 360 degrees on a pedestal" --poll
 
 EOF
     exit 0
@@ -67,6 +73,7 @@ EOF
 # Parse arguments
 IMAGE=""
 PROMPT=""
+PROMPT_FILE=""
 MODEL="$DEFAULT_MODEL"
 DURATION="$DEFAULT_DURATION"
 POLL=false
@@ -76,6 +83,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --image|-i) IMAGE="$2"; shift 2 ;;
         --prompt|-p) PROMPT="$2"; shift 2 ;;
+        --prompt-file|-f) PROMPT_FILE="$2"; shift 2 ;;
         --model|-m) MODEL="$2"; shift 2 ;;
         --duration|-d) DURATION="$2"; shift 2 ;;
         --poll) POLL=true; shift ;;
@@ -96,25 +104,41 @@ if [ ! -f "$IMAGE" ]; then
     exit 1
 fi
 
+# Handle prompt from file
+if [ -n "$PROMPT_FILE" ]; then
+    if [ ! -f "$PROMPT_FILE" ]; then
+        print_error "Prompt file not found: $PROMPT_FILE"
+        exit 1
+    fi
+    PROMPT=$(cat "$PROMPT_FILE")
+    print_info "Loaded prompt from file: $PROMPT_FILE"
+fi
+
+# Validate prompt exists
+if [ -z "$PROMPT" ]; then
+    print_error "Prompt is required. Use --prompt or --prompt-file"
+    usage
+fi
+
 # Display info
 print_info "Creating video from image: $IMAGE"
 print_info "Model: $MODEL, Duration: ${DURATION}s"
-if [ -n "$PROMPT" ]; then
-    print_info "Prompt: \"$PROMPT\""
-fi
+echo ""
+print_info "Prompt:"
+echo "----------------------------------------"
+echo "$PROMPT"
+echo "----------------------------------------"
 
-# Build curl command
+# Build curl command - using input_reference for the image
 CURL_ARGS=(
     -s -X POST "${API_BASE_URL}/videos"
     -H "Authorization: Bearer $OPENAI_API_KEY"
+    -H "Content-Type: multipart/form-data"
     -F "model=$MODEL"
     -F "seconds=$DURATION"
-    -F "image=@$IMAGE"
+    -F "prompt=$PROMPT"
+    -F "input_reference=@$IMAGE"
 )
-
-if [ -n "$PROMPT" ]; then
-    CURL_ARGS+=(-F "prompt=$PROMPT")
-fi
 
 # Create video
 echo ""
