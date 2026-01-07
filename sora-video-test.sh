@@ -272,9 +272,9 @@ download_video() {
         output="video_${video_id}.mp4"
     fi
 
-    print_info "Getting video URL for: $video_id"
+    print_info "Checking video status: $video_id"
 
-    # First get the video details to find the download URL
+    # First check if video is completed
     local response=$(curl -s -X GET "${API_BASE_URL}/videos/${video_id}" \
         -H "Authorization: Bearer $OPENAI_API_KEY")
 
@@ -286,17 +286,20 @@ download_video() {
         exit 1
     fi
 
-    local download_url=$(echo "$response" | jq -r '.video_url // .url // .download_url // empty')
+    print_info "Downloading video to: $output"
 
-    if [ -z "$download_url" ]; then
-        print_warning "Could not extract download URL from response. Showing full response:"
-        echo "$response" | jq '.'
+    # Use the /content endpoint to download the video
+    curl -s -X GET "${API_BASE_URL}/videos/${video_id}/content" \
+        -H "Authorization: Bearer $OPENAI_API_KEY" \
+        -o "$output"
+
+    # Check if download succeeded
+    if [ -f "$output" ] && [ -s "$output" ]; then
+        print_success "Video saved to: $output"
+    else
+        print_error "Download failed or file is empty"
         exit 1
     fi
-
-    print_info "Downloading video to: $output"
-    curl -s -L "$download_url" -o "$output"
-    print_success "Video saved to: $output"
 }
 
 delete_video() {
