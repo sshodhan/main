@@ -187,14 +187,15 @@ if [ "$POLL" = true ]; then
                 # Download if output specified
                 if [ -n "$OUTPUT" ]; then
                     echo ""
-                    DOWNLOAD_URL=$(echo "$POLL_RESPONSE" | jq -r '.video_url // .url // .download_url // empty')
+                    print_info "Downloading to: $OUTPUT"
+                    curl -s -X GET "${API_BASE_URL}/videos/${VIDEO_ID}/content" \
+                        -H "Authorization: Bearer $OPENAI_API_KEY" \
+                        -o "$OUTPUT"
 
-                    if [ -n "$DOWNLOAD_URL" ]; then
-                        print_info "Downloading to: $OUTPUT"
-                        curl -s -L "$DOWNLOAD_URL" -o "$OUTPUT"
+                    if [ -f "$OUTPUT" ] && [ -s "$OUTPUT" ]; then
                         print_success "Video saved to: $OUTPUT"
                     else
-                        print_error "Could not extract download URL"
+                        print_error "Download failed or file is empty"
                     fi
                 fi
                 exit 0
