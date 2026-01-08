@@ -68,6 +68,8 @@ Commands:
     --model, -m           Model to use: sora-2 or sora-2-pro (default: sora-2)
     --duration, -d        Duration in seconds: 4, 8, or 12 (default: 4)
     --size, -s            Resolution: 720x1280, 1280x720, 1024x1792, 1792x1024 (default: 1280x720)
+    --poll                Wait for video to complete
+    --output, -o          Download completed video to this path (requires --poll)
 
   create-image [options]   Create a video from an image
     --image, -i           Path to the input image (required)
@@ -128,6 +130,8 @@ create_video() {
     local model="$DEFAULT_MODEL"
     local duration="$DEFAULT_DURATION"
     local size="$DEFAULT_SIZE"
+    local poll=false
+    local output=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -135,6 +139,8 @@ create_video() {
             --model|-m) model="$2"; shift 2 ;;
             --duration|-d) duration="$2"; shift 2 ;;
             --size|-s) size="$2"; shift 2 ;;
+            --poll) poll=true; shift ;;
+            --output|-o) output="$2"; shift 2 ;;
             *) print_error "Unknown option: $1"; exit 1 ;;
         esac
     done
@@ -147,13 +153,77 @@ create_video() {
     print_info "Creating video with prompt: \"$prompt\""
     print_info "Model: $model, Duration: ${duration}s, Size: $size"
 
-    curl -s -X POST "${API_BASE_URL}/videos" \
+    local response=$(curl -s -X POST "${API_BASE_URL}/videos" \
         -H "Authorization: Bearer $OPENAI_API_KEY" \
         -H "Content-Type: multipart/form-data" \
         -F "prompt=$prompt" \
         -F "model=$model" \
         -F "seconds=$duration" \
-        -F "size=$size" | jq '.'
+        -F "size=$size")
+
+    # Check for error
+    if echo "$response" | jq -e '.error' > /dev/null 2>&1; then
+        print_error "API Error:"
+        echo "$response" | jq '.'
+        exit 1
+    fi
+
+    local video_id=$(echo "$response" | jq -r '.id')
+    print_success "Video created: $video_id"
+    echo "$response" | jq '.'
+
+    # Poll if requested
+    if [ "$poll" = true ]; then
+        echo ""
+        print_info "Polling for completion..."
+
+        local interval=10
+        local timeout=600
+        local elapsed=0
+
+        while [ $elapsed -lt $timeout ]; do
+            sleep $interval
+            elapsed=$((elapsed + interval))
+
+            local poll_response=$(curl -s -X GET "${API_BASE_URL}/videos/${video_id}" \
+                -H "Authorization: Bearer $OPENAI_API_KEY")
+
+            local status=$(echo "$poll_response" | jq -r '.status')
+            local progress=$(echo "$poll_response" | jq -r '.progress // 0')
+
+            print_info "Status: $status (progress: ${progress}%, elapsed: ${elapsed}s)"
+
+            case $status in
+                "completed")
+                    print_success "Video generation completed!"
+
+                    # Download if output specified
+                    if [ -n "$output" ]; then
+                        echo ""
+                        print_info "Downloading to: $output"
+                        curl -s -X GET "${API_BASE_URL}/videos/${video_id}/content" \
+                            -H "Authorization: Bearer $OPENAI_API_KEY" \
+                            -o "$output"
+
+                        if [ -f "$output" ] && [ -s "$output" ]; then
+                            print_success "Video saved to: $output"
+                        else
+                            print_error "Download failed or file is empty"
+                        fi
+                    fi
+                    exit 0
+                    ;;
+                "failed")
+                    print_error "Video generation failed!"
+                    echo "$poll_response" | jq '.'
+                    exit 1
+                    ;;
+            esac
+        done
+
+        print_error "Timeout reached after ${timeout}s"
+        exit 1
+    fi
 }
 
 create_video_from_image() {
