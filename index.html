@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Fun Zone</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>Math Fun Zone</h1>
+        <p>Explore Fractions, Multiplication, and Multiples of 10!</p>
+    </header>
+    <main>
+        <section id="fractions">
+            <h2>Fractions Explorer</h2>
+            <label>
+                Numerator: <input type="number" id="numerator" value="1" min="0">
+            </label>
+            <label>
+                Denominator: <input type="number" id="denominator" value="2" min="1">
+            </label>
+            <button onclick="drawFraction()">Show Fraction</button>
+            <canvas id="fractionCanvas" width="200" height="200"></canvas>
+        </section>
+        <section id="multiplication">
+            <h2>Multiplication Practice</h2>
+            <label>
+                Number 1: <input type="number" id="mult1" value="2" min="0">
+            </label>
+            <label>
+                Number 2: <input type="number" id="mult2" value="3" min="0">
+            </label>
+            <button onclick="showProduct()">Multiply</button>
+            <p id="productResult"></p>
+        </section>
+        <section id="tens">
+            <h2>Multiples of 10</h2>
+            <label>
+                Up to: <input type="number" id="tenLimit" value="100" min="10" step="10">
+            </label>
+            <button onclick="showTens()">Show Multiples</button>
+            <ul id="tensList"></ul>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
